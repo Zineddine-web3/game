@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -8,118 +7,54 @@
 <style>
   body { margin:0; overflow:hidden; background:#e8e0d4; touch-action:none; cursor:none; }
   canvas { display:block; }
-  #soundBtn {
-    position:fixed; bottom:18px; right:18px;
-    background:rgba(50,40,30,0.7); color:#ddd;
-    border:1.5px solid #888; border-radius:50%;
-    width:42px; height:42px; font-size:20px;
-    cursor:pointer; display:flex; align-items:center; justify-content:center;
-    transition:background 0.3s; z-index:10;
-    font-family:sans-serif; backdrop-filter:blur(4px);
-  }
-  #soundBtn:hover { background:rgba(80,60,40,0.9); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<button id="soundBtn" title="Toggle Sound">🔇</button>
+
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
-window.addEventListener("resize", () => {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+
+window.addEventListener("resize", () => { 
+    canvas.width = window.innerWidth; 
+    canvas.height = window.innerHeight; 
 });
 
+// ── mouse ──
 let mouse = { x: canvas.width/2, y: canvas.height/2 };
-window.addEventListener(“mousemove”, e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-window.addEventListener(“touchmove”, e => {
-e.preventDefault();
-mouse.x = e.touches[0].clientX;
-mouse.y = e.touches[0].clientY;
+
+window.addEventListener("mousemove", e => { 
+    mouse.x = e.clientX; 
+    mouse.y = e.clientY; 
+});
+
+window.addEventListener("touchmove", e => {
+    e.preventDefault();
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
 }, { passive: false });
 
-// ── Spine: spine[0] = head, spine[N-1] = tail ──
+// ── spine ──
 const N = 32;
 const SEG = 20;
+
 const spine = [];
 for (let i = 0; i < N; i++) spine.push({ x: canvas.width/2, y: canvas.height/2 });
 
-// ── Small tail segments (appended after spine) ──
-const TAIL_N = 18;
-const TAIL_SEG = 10;
-const tail = [];
-for (let i = 0; i < TAIL_N; i++) tail.push({ x: canvas.width/2, y: canvas.height/2 });
-
 let cursor = { x: canvas.width/2, y: canvas.height/2 };
 
-// ── Web Audio – gentle ambient drone ──
-let audioCtx = null, soundOn = false;
-let masterGain, droneOsc1, droneOsc2, noiseSource, noiseGain;
-
-function buildAudio() {
-if (audioCtx) return;
-audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-masterGain = audioCtx.createGain();
-masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
-masterGain.connect(audioCtx.destination);
-
-// low ambient drone
-droneOsc1 = audioCtx.createOscillator();
-droneOsc1.type = “sine”;
-droneOsc1.frequency.setValueAtTime(55, audioCtx.currentTime); // A1
-const g1 = audioCtx.createGain(); g1.gain.value = 0.18;
-droneOsc1.connect(g1); g1.connect(masterGain); droneOsc1.start();
-
-droneOsc2 = audioCtx.createOscillator();
-droneOsc2.type = “triangle”;
-droneOsc2.frequency.setValueAtTime(82.4, audioCtx.currentTime); // E2
-const g2 = audioCtx.createGain(); g2.gain.value = 0.10;
-droneOsc2.connect(g2); g2.connect(masterGain); droneOsc2.start();
-
-// subtle slow LFO on pitch
-const lfo = audioCtx.createOscillator();
-lfo.frequency.setValueAtTime(0.18, audioCtx.currentTime);
-const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 1.5;
-lfo.connect(lfoGain); lfoGain.connect(droneOsc1.frequency);
-lfo.start();
-
-// wind noise
-const bufSize = audioCtx.sampleRate * 2;
-const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
-const data = buf.getChannelData(0);
-for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-noiseSource = audioCtx.createBufferSource();
-noiseSource.buffer = buf; noiseSource.loop = true;
-const bpf = audioCtx.createBiquadFilter();
-bpf.type = “bandpass”; bpf.frequency.value = 280; bpf.Q.value = 0.7;
-noiseGain = audioCtx.createGain(); noiseGain.gain.value = 0.06;
-noiseSource.connect(bpf); bpf.connect(noiseGain); noiseGain.connect(masterGain);
-noiseSource.start();
+// ── 🆕 tail physics ──
+const tailJiggle = [];
+for (let i = 0; i < 6; i++) {
+  tailJiggle.push({ x: 0, y: 0 });
 }
 
-function toggleSound() {
-buildAudio();
-soundOn = !soundOn;
-const t = audioCtx.currentTime;
-if (soundOn) {
-masterGain.gain.cancelScheduledValues(t);
-masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-masterGain.gain.linearRampToValueAtTime(0.7, t + 1.8);
-document.getElementById(“soundBtn”).textContent = “🔊”;
-} else {
-masterGain.gain.cancelScheduledValues(t);
-masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-masterGain.gain.linearRampToValueAtTime(0, t + 1.2);
-document.getElementById(“soundBtn”).textContent = “🔇”;
-}
-}
-document.getElementById(“soundBtn”).addEventListener(“click”, toggleSound);
-
-// ── Update physics ──
 function update() {
+
 cursor.x += (mouse.x - cursor.x) * 0.2;
 cursor.y += (mouse.y - cursor.y) * 0.2;
 
@@ -127,273 +62,136 @@ spine[0].x += (cursor.x - spine[0].x) * 0.25;
 spine[0].y += (cursor.y - spine[0].y) * 0.25;
 
 for (let i = 1; i < N; i++) {
-let px = spine[i-1].x, py = spine[i-1].y;
-let sx = spine[i].x,   sy = spine[i].y;
-let dx = sx - px, dy = sy - py;
-let dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
-let tx = px - (dx/dist) * SEG;
-let ty = py - (dy/dist) * SEG;
-spine[i].x += (tx - spine[i].x) * 0.55;
-spine[i].y += (ty - spine[i].y) * 0.55;
+
+    let px = spine[i-1].x, py = spine[i-1].y;
+    let sx = spine[i].x, sy = spine[i].y;
+
+    let dx = sx - px;
+    let dy = sy - py;
+
+    let dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
+
+    let tx = px - (dx/dist) * SEG;
+    let ty = py - (dy/dist) * SEG;
+
+    spine[i].x += (tx - spine[i].x) * 0.55;
+    spine[i].y += (ty - spine[i].y) * 0.55;
 }
 
-// small tail follows last spine segment
-let prevX = spine[N-1].x, prevY = spine[N-1].y;
-for (let i = 0; i < TAIL_N; i++) {
-let sx = tail[i].x, sy = tail[i].y;
-let dx = sx - prevX, dy = sy - prevY;
-let dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
-let tx = prevX - (dx/dist) * TAIL_SEG;
-let ty = prevY - (dy/dist) * TAIL_SEG;
-// smoother / lazier chase for a flicky feel
-let ease = 0.38 + (i / TAIL_N) * 0.18;
-tail[i].x += (tx - tail[i].x) * ease;
-tail[i].y += (ty - tail[i].y) * ease;
-prevX = tail[i].x; prevY = tail[i].y;
+// ── tail follow ──
+for (let i = 0; i < tailJiggle.length; i++) {
+  let target = spine[N - 1 - i];
+  if (!target) continue;
+
+  tailJiggle[i].x += (target.x - tailJiggle[i].x) * 0.3;
+  tailJiggle[i].y += (target.y - tailJiggle[i].y) * 0.3;
 }
 }
 
 function segAngle(i) {
-let a = i > 0   ? spine[i-1] : spine[Math.min(i+1, N-1)];
-let b = i < N-1 ? spine[i+1] : spine[Math.max(i-1, 0)];
+let a = i > 0 ? spine[i-1] : spine[i];
+let b = i < N-1 ? spine[i+1] : spine[i];
 return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
-function tailAngle(i) {
-let pts = [
-i === 0 ? spine[N-1] : tail[i-1],
-tail[Math.min(i+1, TAIL_N-1)]
-];
-return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
-}
-
-// ── SKULL ──
+// ── skull ──
 function drawSkull(x, y, angle) {
 ctx.save();
-ctx.translate(x, y); ctx.rotate(angle);
-ctx.lineJoin = “round”; ctx.lineCap = “round”;
+ctx.translate(x, y);
+ctx.rotate(angle);
 
-ctx.fillStyle = “#ddd”; ctx.strokeStyle = “#222”; ctx.lineWidth = 2;
-ctx.shadowColor = “rgba(0,0,0,0.35)”; ctx.shadowBlur = 8;
-ctx.beginPath(); ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-ctx.shadowBlur = 0;
-
-ctx.fillStyle = “#ccc”;
-ctx.beginPath();
-ctx.moveTo(8,-7); ctx.lineTo(32,-5); ctx.lineTo(34,0); ctx.lineTo(32,5); ctx.lineTo(8,7);
-ctx.closePath(); ctx.fill(); ctx.stroke();
-
-ctx.fillStyle = “#eee”; ctx.strokeStyle = “#333”; ctx.lineWidth = 1;
-for (let tx of [12,17,22,27]) {
-ctx.beginPath(); ctx.moveTo(tx,-6); ctx.lineTo(tx+2,-12); ctx.lineTo(tx+4,-6); ctx.closePath(); ctx.fill(); ctx.stroke();
-}
-
-ctx.fillStyle = “#bbb”; ctx.strokeStyle = “#222”; ctx.lineWidth = 2;
-ctx.beginPath(); ctx.moveTo(8,6); ctx.lineTo(31,4); ctx.lineTo(31,10); ctx.lineTo(8,12); ctx.closePath(); ctx.fill(); ctx.stroke();
-
-ctx.fillStyle = “#ddd”; ctx.lineWidth = 1;
-for (let tx of [14,19,24]) {
-ctx.beginPath(); ctx.moveTo(tx,11); ctx.lineTo(tx+2,16); ctx.lineTo(tx+4,11); ctx.closePath(); ctx.fill(); ctx.stroke();
-}
-
-ctx.fillStyle=”#111”; ctx.strokeStyle=”#222”; ctx.lineWidth=1.5;
-ctx.beginPath(); ctx.ellipse(2,-4,7,7,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-ctx.fillStyle=“rgba(255,50,0,0.75)”; ctx.shadowColor=”#ff2200”; ctx.shadowBlur=12;
-ctx.beginPath(); ctx.ellipse(2,-4,4,4,0,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
-
-ctx.fillStyle=”#555”;
-ctx.beginPath(); ctx.ellipse(26,0,3,2.5,0.2,0,Math.PI*2); ctx.fill();
-
-ctx.strokeStyle=”#444”; ctx.lineWidth=2.5; ctx.fillStyle=”#ccc”;
-ctx.beginPath();
-ctx.moveTo(-6,-12); ctx.bezierCurveTo(-14,-26,-4,-38,2,-44);
-ctx.lineTo(4,-28); ctx.bezierCurveTo(-1,-24,-5,-17,-4,-12); ctx.closePath();
-ctx.fill(); ctx.stroke();
+ctx.fillStyle = "#ddd";
+ctx.strokeStyle = "#222";
+ctx.lineWidth = 2;
 
 ctx.beginPath();
-ctx.moveTo(3,-13); ctx.bezierCurveTo(9,-23,14,-28,16,-32);
-ctx.lineTo(14,-21); ctx.bezierCurveTo(10,-18,6,-15,4,-13); ctx.closePath();
-ctx.fill(); ctx.stroke();
-
-ctx.fillStyle=”#bbb”; ctx.strokeStyle=”#555”; ctx.lineWidth=1.5;
-for (let s=0; s<3; s++) {
-let bx = -8-s*7;
-ctx.beginPath(); ctx.moveTo(bx,-12); ctx.lineTo(bx-3,-24-s*3); ctx.lineTo(bx+3,-12); ctx.closePath(); ctx.fill(); ctx.stroke();
-}
-
-ctx.restore();
-}
-
-// ── VERTEBRA + RIBS ──
-function drawVertebra(x, y, angle, idx) {
-let t = idx / (N-1);
-let size = 11 - t*5.5;
-let ribLen = (28 - t*18) * (1 - t*0.4);
-
-ctx.save(); ctx.translate(x,y); ctx.rotate(angle);
-
-ctx.fillStyle=”#d0c8b8”; ctx.strokeStyle=”#333”; ctx.lineWidth=1.4;
-ctx.shadowColor=“rgba(0,0,0,0.25)”; ctx.shadowBlur=3;
-ctx.beginPath(); ctx.rect(-size*0.8,-size*0.55,size*1.6,size*1.1); ctx.fill(); ctx.stroke();
-ctx.shadowBlur=0;
-
-let sh = 16-t*11;
-ctx.fillStyle=”#bbb”; ctx.strokeStyle=”#222”; ctx.lineWidth=1.1;
-ctx.beginPath(); ctx.moveTo(-size*0.3,-size*0.5); ctx.lineTo(0,-size*0.5-sh); ctx.lineTo(size*0.3,-size*0.5); ctx.closePath(); ctx.fill(); ctx.stroke();
-
-if (t < 0.62 && idx % 2 === 0) {
-ctx.lineWidth=1.5; ctx.strokeStyle=”#555”;
-for (let side of [-1,1]) {
-ctx.save(); ctx.scale(1,side);
-ctx.beginPath();
-ctx.moveTo(0, size*0.4);
-ctx.bezierCurveTo(ribLen*0.4, size*0.6+ribLen*0.3, ribLen*0.8, size*0.5+ribLen*0.6, ribLen, size*0.3+ribLen*0.8);
+ctx.ellipse(0, 0, 20, 14, 0, 0, Math.PI*2);
+ctx.fill();
 ctx.stroke();
-ctx.beginPath(); ctx.arc(ribLen, size*0.3+ribLen*0.8, 2.5, 0, Math.PI*2);
-ctx.fillStyle=”#999”; ctx.fill(); ctx.stroke();
-ctx.restore();
-}
-}
+
 ctx.restore();
 }
 
-// ── SMALL TAIL segments (thin tapering bones) ──
-function drawTailBone(x, y, angle, idx) {
-let t = idx / (TAIL_N - 1); // 0 = start, 1 = tip
-let w = 4.5 - t * 4.0;  // tapers to near-zero
-if (w < 0.3) w = 0.3;
+// ── vertebra ──
+function drawVertebra(x, y, angle) {
+ctx.save();
+ctx.translate(x, y);
+ctx.rotate(angle);
 
-ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+ctx.fillStyle = "#d0c8b8";
+ctx.strokeStyle = "#333";
 
-// bone body
-ctx.fillStyle = `rgb(${Math.round(195-t*30)},${Math.round(185-t*25)},${Math.round(170-t*20)})`;
-ctx.strokeStyle = “#333”;
-ctx.lineWidth = 0.8;
 ctx.beginPath();
-ctx.ellipse(0, 0, w * 1.4, w * 0.6, 0, 0, Math.PI * 2);
-ctx.fill(); ctx.stroke();
-
-// small dorsal nub every other segment
-if (idx % 3 === 0 && t < 0.85) {
-let nubH = (3 - t * 2.5);
-ctx.fillStyle = “#aaa”; ctx.strokeStyle=”#444”; ctx.lineWidth=0.7;
-ctx.beginPath();
-ctx.moveTo(-w*0.35, -w*0.5);
-ctx.lineTo(0, -w*0.5 - nubH);
-ctx.lineTo(w*0.35, -w*0.5);
-ctx.closePath(); ctx.fill(); ctx.stroke();
-}
+ctx.rect(-6, -4, 12, 8);
+ctx.fill();
+ctx.stroke();
 
 ctx.restore();
 }
 
-// ── TAIL TIP (spade / arrow shape) ──
-function drawTailTip(frame) {
-let tip = tail[TAIL_N - 1];
-let prev = tail[TAIL_N - 4];
-let ang = Math.atan2(tip.y - prev.y, tip.x - prev.x);
+// ── 🐉 upgraded tail ──
+function drawTailFin() {
 
-ctx.save(); ctx.translate(tip.x, tip.y); ctx.rotate(ang);
+ctx.save();
 
-let sc = 1 + Math.sin(frame * 0.045) * 0.04; // tiny breathe
-ctx.scale(sc, sc);
+for (let i = 0; i < tailJiggle.length; i++) {
 
-ctx.fillStyle = “#b8b0a0”; ctx.strokeStyle = “#2a2a2a”; ctx.lineWidth = 1.4;
-ctx.shadowColor = “rgba(0,0,0,0.3)”; ctx.shadowBlur = 5;
+  let p = tailJiggle[i];
+  let n = tailJiggle[i + 1] || tailJiggle[i - 1] || p;
 
-// spade/arrowhead
+  let ang = Math.atan2(n.y - p.y, n.x - p.x);
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(ang);
+
+  let scale = 1 - i * 0.12;
+
+  ctx.fillStyle = i === 0 ? "#bbb" : "#999";
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(18 * scale, -2 * scale);
+  ctx.lineTo(18 * scale, 2 * scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// tip
+let tip = tailJiggle[tailJiggle.length - 1];
+
+ctx.fillStyle = "#888";
 ctx.beginPath();
-ctx.moveTo(12, 0);           // tip forward
-ctx.bezierCurveTo(6, -7, -4, -9, -10, -5);
-ctx.bezierCurveTo(-8, 0, -8, 0, -10, 5);
-ctx.bezierCurveTo(-4, 9, 6, 7, 12, 0);
-ctx.fill(); ctx.stroke();
-ctx.shadowBlur = 0;
-
-// center vein
-ctx.strokeStyle = “#555”; ctx.lineWidth = 0.8;
-ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(10, 0); ctx.stroke();
+ctx.arc(tip.x, tip.y, 3, 0, Math.PI*2);
+ctx.fill();
 
 ctx.restore();
 }
 
-// ── WINGS ──
-function drawWings(x, y, angle, frame) {
-let flap = Math.sin(frame*0.065)*0.32;
-for (let side of [-1,1]) {
-ctx.save(); ctx.translate(x,y); ctx.rotate(angle+Math.PI/2); ctx.scale(1,side);
-ctx.save(); ctx.rotate(flap*side);
-ctx.fillStyle=“rgba(35,25,15,0.5)”; ctx.strokeStyle=”#333”; ctx.lineWidth=1.5;
-ctx.beginPath(); ctx.moveTo(0,0);
-ctx.bezierCurveTo(20,-14,70,-38+flap*28,108,-18+flap*18);
-ctx.bezierCurveTo(88,10,48,30,14,20); ctx.bezierCurveTo(5,12,0,5,0,0);
-ctx.fill(); ctx.stroke();
-ctx.strokeStyle=”#555”; ctx.lineWidth=2;
-let fingers = [
-{x1:22,y1:-18,x2:62,y2:-42,ex:108,ey:-18+flap*18},
-{x1:14,y1:-9, x2:52,y2:-24,ex:76, ey:6},
-{x1:8, y1:-4, x2:38,y2:10, ex:52, ey:22},
-];
-for (let f of fingers) {
-ctx.beginPath(); ctx.moveTo(0,0); ctx.bezierCurveTo(f.x1,f.y1,f.x2,f.y2,f.ex,f.ey); ctx.stroke();
-ctx.fillStyle=”#888”; ctx.beginPath(); ctx.arc(f.ex,f.ey,3,0,Math.PI*2); ctx.fill();
-}
-ctx.restore(); ctx.restore();
-}
-}
-
-// ── PARTICLES ──
-const particles = [];
-function spawnParticle(x,y) {
-if (Math.random()>0.28) return;
-particles.push({ x,y, vx:(Math.random()-.5)*1.4, vy:(Math.random()-.5)*1.4-0.8, life:1, r:1.5+Math.random()*3 });
-}
-function tickParticles() {
-for (let i=particles.length-1;i>=0;i–) {
-let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.022; if(p.life<=0) particles.splice(i,1);
-}
-}
-function drawParticles() {
-for (let p of particles) {
-ctx.globalAlpha=p.life*0.35;
-ctx.fillStyle=”#888”;
-ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-}
-ctx.globalAlpha=1;
-}
-
-// ── MAIN LOOP ──
-let frame=0;
-ctx.fillStyle=”#e8e0d4”; ctx.fillRect(0,0,canvas.width,canvas.height);
-
+// ── loop ──
 function draw() {
-ctx.fillStyle=“rgba(232,224,212,0.38)”;
-ctx.fillRect(0,0,canvas.width,canvas.height);
+
+ctx.fillStyle = "rgba(232,224,212,0.4)";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 update();
 
-// draw small tail first (behind body)
-for (let i = TAIL_N-1; i >= 0; i–) {
-drawTailBone(tail[i].x, tail[i].y, tailAngle(i), i);
-}
-drawTailTip(frame);
-
-// vertebrae
-for (let i = N-1; i >= 1; i–) {
-drawVertebra(spine[i].x, spine[i].y, segAngle(i), i);
+for (let i = N - 1; i >= 1; i--) {
+drawVertebra(spine[i].x, spine[i].y, segAngle(i));
 }
 
-let wi = Math.floor(N*0.18);
-drawWings(spine[wi].x, spine[wi].y, segAngle(wi), frame);
+drawTailFin();
 
 drawSkull(spine[0].x, spine[0].y, segAngle(0));
 
-spawnParticle(spine[0].x, spine[0].y);
-tickParticles(); drawParticles();
-
-frame++;
 requestAnimationFrame(draw);
 }
+
 draw();
 </script>
 
